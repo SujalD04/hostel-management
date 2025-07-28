@@ -1,34 +1,37 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import apiClient from '../../api/apiClient';
-import { format } from 'date-fns';
-import { AlertTriangle, Loader, Check, Ticket } from 'lucide-react';
+import { formatDistanceToNow } from 'date-fns';
+import { AnimatePresence, motion } from 'framer-motion';
+import { AlertTriangle, Loader, Check, Ticket, ListChecks, History, MapPin, Clock } from 'lucide-react';
 import GenerateTicketModal from '../../components/warden/GenerateTicketModal';
 
+// --- Status styles for consistency ---
 const statusStyles = {
-  SUBMITTED: 'bg-yellow-500/20 text-yellow-300',
-  IN_PROGRESS: 'bg-blue-500/20 text-blue-300',
-  TICKET_GENERATED: 'bg-purple-500/20 text-purple-300',
-  COMPLETED: 'bg-green-500/20 text-green-300',
-  REJECTED: 'bg-red-500/20 text-red-300',
+  SUBMITTED: 'bg-amber-500/20 text-amber-300 border border-amber-500/30',
+  IN_PROGRESS: 'bg-sky-500/20 text-sky-300 border border-sky-500/30',
+  TICKET_GENERATED: 'bg-violet-500/20 text-violet-300 border border-violet-500/30',
+  COMPLETED: 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30',
+  REJECTED: 'bg-rose-500/20 text-rose-300 border border-rose-500/30',
 };
 
+// --- Main Page Component ---
 const WardenDashboardPage = () => {
   const [complaints, setComplaints] = useState([]);
+  const [cleaners, setCleaners] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedComplaint, setSelectedComplaint] = useState(null);
-  const [selectedCleaners, setSelectedCleaners] = useState({});
-  const [cleaners, setCleaners] = useState([]);
+  const [view, setView] = useState('active'); // 'active' or 'completed'
 
-
+  // --- Backend data fetching logic is untouched ---
   const fetchComplaints = useCallback(async () => {
     try {
-      setIsLoading(true);
       const response = await apiClient.get('/warden/complaints');
       setComplaints(response.data.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
     } catch (err) {
       setError('Could not load complaints.');
+      console.error(err);
     } finally {
       setIsLoading(false);
     }
@@ -36,121 +39,298 @@ const WardenDashboardPage = () => {
 
   useEffect(() => {
     const fetchCleaners = async () => {
-        try {
+      try {
         const response = await apiClient.get('/warden/cleaners');
         setCleaners(response.data);
-        } catch (err) {
+      } catch (err) {
         console.error('Could not load cleaners', err);
-        }
+      }
     };
-
     fetchCleaners();
-    }, []);
-
-
-  useEffect(() => {
     fetchComplaints();
   }, [fetchComplaints]);
-  
+
+  // --- Action Handlers are untouched ---
   const handleApproveCleaning = async (complaintId, cleanerId) => {
     try {
-        // 👇 Send cleanerId in the request body!
-        await apiClient.post(
-            `/warden/complaints/${complaintId}/approve-cleaning`,
-            {}, // empty body, since you don’t need it
-            { params: { cleanerId: cleanerId } } // ✅ this adds ?cleanerId=UUID
-        );
-        fetchComplaints(); // Refresh updated list
+      await apiClient.post(`/warden/complaints/${complaintId}/approve-cleaning`, {}, { params: { cleanerId } });
+      fetchComplaints();
     } catch (err) {
-        console.error(err);
-        alert('Failed to approve and assign cleaning complaint.');
+      console.error(err);
+      throw new Error('Failed to assign complaint.');
     }
-    };
-
-    const handleCleanerChange = (complaintId, cleanerId) => {
-        setSelectedCleaners(prev => ({
-            ...prev,
-            [complaintId]: cleanerId
-        }));
-    };
-
-
+  };
 
   const handleOpenTicketModal = (complaint) => {
     setSelectedComplaint(complaint);
     setIsModalOpen(true);
   };
+  
+  // --- Filtered lists based on the current view ---
+  const activeComplaints = complaints.filter(c => c.status !== 'COMPLETED');
+  const completedComplaints = complaints.filter(c => c.status === 'COMPLETED');
+  
+  const renderContent = () => {
+    if (isLoading) return <ComplaintCardSkeleton />;
+    if (error) return <ErrorState message={error} />;
+    
+    const complaintsToDisplay = view === 'active' ? activeComplaints : completedComplaints;
 
-  if (isLoading) return <div className="flex justify-center mt-10"><Loader className="animate-spin h-10 w-10 text-white" /></div>;
-  if (error) return <div className="text-red-400 text-center mt-10"><AlertTriangle className="mx-auto h-8 w-8" />{error}</div>;
+    if (complaintsToDisplay.length === 0) {
+        return view === 'active' ? <ActiveEmptyState /> : <CompletedEmptyState />;
+    }
+    
+    return (
+      <motion.div
+        key={view} // Add key to force re-render with animations on view change
+        className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6"
+        initial="hidden"
+        animate="visible"
+        variants={{ visible: { transition: { staggerChildren: 0.07 } } }}
+      >
+        {complaintsToDisplay.map(complaint => (
+          <ComplaintCard
+            key={complaint.id}
+            complaint={complaint}
+            cleaners={cleaners}
+            onApprove={handleApproveCleaning}
+            onGenerateTicket={handleOpenTicketModal}
+          />
+        ))}
+      </motion.div>
+    );
+  };
 
   return (
     <>
-      <h1 className="text-4xl font-bold text-white mb-8">All Complaints</h1>
-      <div className="bg-gray-800 rounded-lg shadow-lg overflow-hidden">
-        <table className="min-w-full text-white">
-          <thead className="bg-gray-700">
-            <tr>
-              <th className="text-left py-3 px-4">Student</th>
-              <th className="text-left py-3 px-4">Description</th>
-              <th className="text-left py-3 px-4">Type</th>
-              <th className="text-left py-3 px-4">Date</th>
-              <th className="text-left py-3 px-4">Status</th>
-              <th className="text-left py-3 px-4">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-700">
-            {complaints.map(c => (
-              <tr key={c.id} className="hover:bg-gray-700/50">
-                <td className="py-3 px-4">{c.studentName}</td>
-                <td className="py-3 px-4">{c.description}</td>
-                <td className="py-3 px-4">{c.complaintType}</td>
-                <td className="py-3 px-4 text-sm text-gray-400">{format(new Date(c.createdAt), 'dd MMM yyyy')}</td>
-                <td className="py-3 px-4">
-                  <span className={`px-2 py-1 text-xs font-bold rounded-full ${statusStyles[c.status]}`}>
-                    {c.status.replace('_', ' ')}
-                  </span>
-                </td>
-                <td className="py-3 px-4">
-                  {c.status === 'SUBMITTED' && c.complaintType === 'CLEANER' && (
-                    <>
-                        <select 
-                        onChange={e => handleCleanerChange(c.id, e.target.value)}
-                        value={selectedCleaners[c.id] || ''}
-                        >
-                        <option value="">Select Cleaner</option>
-                        {cleaners.map(cl => (
-                            <option key={cl.id} value={cl.id}>{cl.fullName}</option>
-                        ))}
-                        </select>
-                        <button
-                        disabled={!selectedCleaners[c.id]}
-                        onClick={() => handleApproveCleaning(c.id, selectedCleaners[c.id])}
-                        >
-                        Approve
-                        </button>
-                    </>
-                    )}
-                  {c.status === 'SUBMITTED' && (c.complaintType === 'ELECTRICIAN' || c.complaintType === 'WARDEN') && (
-                    <button onClick={() => handleOpenTicketModal(c)} className="flex items-center text-sm bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded">
-                      <Ticket className="h-4 w-4 mr-1"/> Generate Ticket
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {isModalOpen && (
-        <GenerateTicketModal 
-            complaint={selectedComplaint} 
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8"
+      >
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold text-slate-100 flex items-center gap-3">
+            <ListChecks className="h-8 w-8 text-sky-400" />
+            Manage Complaints
+          </h1>
+          <p className="text-slate-400 mt-1">Review, assign, and process all student complaints.</p>
+        </div>
+
+        {/* --- View Switcher --- */}
+        <ViewSwitcher
+          view={view}
+          setView={setView}
+          activeCount={activeComplaints.length}
+          completedCount={completedComplaints.length}
+        />
+
+        {/* --- Content Area --- */}
+        <div className="mt-8">
+            {renderContent()}
+        </div>
+
+      </motion.div>
+
+      <AnimatePresence>
+        {isModalOpen && selectedComplaint && (
+          <GenerateTicketModal
+            complaint={selectedComplaint}
             onClose={() => setIsModalOpen(false)}
             onTicketGenerated={fetchComplaints}
-        />
-      )}
+          />
+        )}
+      </AnimatePresence>
     </>
   );
 };
+
+// --- View Switcher Component ---
+const ViewSwitcher = ({ view, setView, activeCount, completedCount }) => {
+  const tabs = [
+    { id: 'active', label: 'Active Complaints', count: activeCount, icon: <ListChecks size={18} /> },
+    { id: 'completed', label: 'Completed History', count: completedCount, icon: <History size={18} /> },
+  ];
+
+  return (
+    <div className="p-1.5 bg-slate-800/80 border border-slate-700 rounded-xl flex items-center gap-2 max-w-md">
+      {tabs.map(tab => (
+        <button
+          key={tab.id}
+          onClick={() => setView(tab.id)}
+          className={`${
+            view === tab.id ? 'text-slate-100' : 'text-slate-400 hover:text-slate-200'
+          } relative w-full flex items-center justify-center gap-2 px-3 py-2.5 text-sm font-semibold transition rounded-lg`}
+        >
+          {view === tab.id && (
+            <motion.div
+              layoutId="active-pill"
+              className="absolute inset-0 bg-slate-700/50"
+              style={{ borderRadius: '8px' }}
+              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            />
+          )}
+          <span className="relative z-10 flex items-center gap-2">{tab.icon}{tab.label}
+             <span className="bg-slate-900 text-slate-300 text-xs font-bold px-2 py-0.5 rounded-full">{tab.count}</span>
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+};
+
+
+// --- Individual Complaint Card Component ---
+const ComplaintCard = ({ complaint, cleaners, onApprove, onGenerateTicket }) => {
+  const [selectedCleaner, setSelectedCleaner] = useState('');
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [updateError, setUpdateError] = useState('');
+  
+  const handleApproveClick = async () => {
+    if (!selectedCleaner) {
+      setUpdateError('Please select a cleaner.');
+      return;
+    }
+    setIsUpdating(true);
+    setUpdateError('');
+    try {
+      await onApprove(complaint.id, selectedCleaner);
+    } catch (error) {
+      setUpdateError(error.message);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+  
+  const ActionPanel = () => {
+    if (complaint.status !== 'SUBMITTED') {
+      return <p className="text-xs text-center text-slate-500 italic py-2">No pending actions</p>;
+    }
+
+    if (complaint.complaintType === 'CLEANER') {
+      const cleanerOptions = cleaners.map(c => ({ value: c.id, label: c.fullName }));
+      return (
+        <div className="space-y-3">
+          <select
+            value={selectedCleaner}
+            onChange={(e) => setSelectedCleaner(e.target.value)}
+            className="w-full h-11 py-2 px-3 bg-slate-900/70 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500 appearance-none"
+            disabled={isUpdating}
+          >
+            <option value="">-- Assign a Cleaner --</option>
+            {cleanerOptions.map(opt => <option key={opt.value} value={opt.value} className="bg-slate-800">{opt.label}</option>)}
+          </select>
+          <motion.button
+            onClick={handleApproveClick}
+            disabled={!selectedCleaner || isUpdating}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-600 text-white font-semibold hover:bg-emerald-700 transition-colors disabled:bg-slate-600 disabled:cursor-not-allowed"
+          >
+            {isUpdating ? <Loader size={20} className="animate-spin" /> : <><Check size={20} /> Approve & Assign</>}
+          </motion.button>
+          {updateError && <p className="text-xs text-rose-400 text-center">{updateError}</p>}
+        </div>
+      );
+    }
+
+    if (complaint.complaintType === 'ELECTRICIAN' || complaint.complaintType === 'WARDEN') {
+      return (
+        <motion.button
+          onClick={() => onGenerateTicket(complaint)}
+          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-sky-600 text-white font-semibold hover:bg-sky-700 transition-colors"
+        >
+          <Ticket size={20} /> Generate Ticket
+        </motion.button>
+      );
+    }
+    
+    return null;
+  };
+
+  return (
+    <motion.div
+      variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
+      className="bg-slate-800/60 border border-slate-700 rounded-xl shadow-lg backdrop-blur-sm flex flex-col"
+    >
+      <div className="p-4 border-b border-slate-700/50 flex justify-between items-center">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center font-bold text-sky-300 text-sm">
+            {complaint.studentName.charAt(0).toUpperCase()}
+          </div>
+          <div>
+            <p className="font-bold text-slate-200">{complaint.studentName}</p>
+            <p className="text-xs text-slate-400">{complaint.student?.roomNumber || 'Room N/A'}</p>
+          </div>
+        </div>
+        <span className={`px-3 py-1 text-xs font-semibold rounded-full ${statusStyles[complaint.status]}`}>
+          {complaint.status.replace('_', ' ')}
+        </span>
+      </div>
+
+      <div className="p-4 flex-grow">
+        <p className="text-slate-300">{complaint.description}</p>
+        <div className="text-xs text-slate-400 mt-4 space-y-2">
+            <p className="flex items-center gap-2"><MapPin size={12}/>{complaint.location}</p>
+            <p className="flex items-center gap-2"><Clock size={12}/>{formatDistanceToNow(new Date(complaint.createdAt), { addSuffix: true })}</p>
+        </div>
+      </div>
+
+      <div className="p-4 bg-slate-900/40 border-t border-slate-700/50 rounded-b-xl">
+        <ActionPanel />
+      </div>
+    </motion.div>
+  );
+};
+
+
+// --- Helper Components for Page States ---
+const ComplaintCardSkeleton = () => (
+  <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+    {[...Array(6)].map((_, i) => (
+      <div key={i} className="bg-slate-800/60 border border-slate-700 rounded-xl animate-pulse">
+        <div className="p-4 border-b border-slate-700/50 flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-full bg-slate-700"></div>
+            <div className="space-y-2">
+                <div className="h-4 w-24 bg-slate-700 rounded"></div>
+                <div className="h-3 w-16 bg-slate-700 rounded"></div>
+            </div>
+          </div>
+          <div className="h-6 w-24 bg-slate-700 rounded-full"></div>
+        </div>
+        <div className="p-4">
+          <div className="h-4 w-full bg-slate-700 rounded mb-2"></div>
+          <div className="h-4 w-5/6 bg-slate-700 rounded"></div>
+        </div>
+        <div className="p-4 bg-slate-900/40 border-t border-slate-700/50 rounded-b-xl">
+            <div className="h-11 w-full bg-slate-700 rounded-lg"></div>
+        </div>
+      </div>
+    ))}
+  </div>
+);
+
+const ActiveEmptyState = () => (
+  <div className="text-center py-20 px-6 bg-slate-800/40 border border-slate-700 rounded-xl">
+    <Check className="mx-auto h-16 w-16 text-emerald-400" />
+    <h3 className="mt-4 text-2xl font-bold text-slate-100">Inbox Zero!</h3>
+    <p className="mt-2 text-slate-400">There are no active complaints to review. Great job!</p>
+  </div>
+);
+
+const CompletedEmptyState = () => (
+  <div className="text-center py-20 px-6 bg-slate-800/40 border border-slate-700 rounded-xl">
+    <History className="mx-auto h-16 w-16 text-slate-500" />
+    <h3 className="mt-4 text-2xl font-bold text-slate-100">No Completed Tasks</h3>
+    <p className="mt-2 text-slate-400">The history of completed complaints will appear here.</p>
+  </div>
+);
+
+const ErrorState = ({ message }) => (
+  <div className="flex flex-col items-center justify-center min-h-[40vh] bg-red-900/20 border border-red-500/30 rounded-lg p-8 text-red-300">
+    <AlertTriangle className="h-12 w-12" />
+    <h2 className="mt-4 text-xl font-semibold">An Error Occurred</h2>
+    <p>{message}</p>
+  </div>
+);
 
 export default WardenDashboardPage;

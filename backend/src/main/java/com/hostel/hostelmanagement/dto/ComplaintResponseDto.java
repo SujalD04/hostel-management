@@ -15,4 +15,9 @@ public class ComplaintResponseDto {
     private String status;
     private String assignedToName; // Simplified, just return name instead of whole User
     private String studentName;    // If you want
+
+    private String ticketId;
+    private String ticketAssignedTo;
+    private LocalDateTime resolvedAt;
+    private String resolutionNotes;
 }

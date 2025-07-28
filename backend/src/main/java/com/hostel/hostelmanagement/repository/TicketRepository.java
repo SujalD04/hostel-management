@@ -16,5 +16,7 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
     List<Ticket> findByAssignedToIdAndStatusNot(UUID assignedToId, TicketStatus status);
     Optional<Ticket> findById(UUID ticketId);
     long countByStatus(TicketStatus status);
+    Optional<Ticket> findByComplaintId(UUID complaintId);
+
 
 }

@@ -1,5 +1,10 @@
 package com.hostel.hostelmanagement.service;
 
+import java.util.List;
+
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Service;
+
 import com.hostel.hostelmanagement.dto.ComplaintRequestDto;
 import com.hostel.hostelmanagement.dto.ComplaintResponseDto;
 import com.hostel.hostelmanagement.model.Complaint;
@@ -8,12 +13,8 @@ import com.hostel.hostelmanagement.model.Role;
 import com.hostel.hostelmanagement.model.User;
 import com.hostel.hostelmanagement.repository.ComplaintRepository;
 import com.hostel.hostelmanagement.repository.UserRepository;
-import lombok.AllArgsConstructor;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.stereotype.Service;
 
-import java.util.List;
-import java.util.UUID;
+import lombok.AllArgsConstructor;
 
 @Service
 @AllArgsConstructor
